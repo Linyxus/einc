@@ -12,7 +12,16 @@ object ApplicativeOps:
     def <*[B](fb: F[B]): F[B] =
       fa.map(a => (b: B) => b) <*> fb
 
+    def zip[B](fb: F[B]): F[(A, B)] =
+      (fa, fb).mapWith: (a, b) =>
+        (a, b)
+
   extension [F[_]: Applicative, A, B](fab: (F[A], F[B]))
     def mapWith[C](f: (A, B) => C): F[C] =
       val (fa, fb) = fab
       fa.map((a: A) => (b: B) => f(a, b)) <*> fb
+
+  extension [F[_]: Applicative, A, B, C](fabc: (F[A], F[B], F[C]))
+    def mapWith[R](f: (A, B, C) => R): F[R] =
+      val (fa, fb, fc) = fabc
+      fa.map((a: A) => (b: B) => (c: C) => f(a, b, c)) <*> fb <*> fc
