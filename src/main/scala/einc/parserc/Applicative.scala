@@ -12,9 +12,14 @@ object ApplicativeOps:
     def <*[B](fb: F[B]): F[B] =
       fa.map(a => (b: B) => b) <*> fb
 
-    def zip[B](fb: F[B]): F[(A, B)] =
-      (fa, fb).mapWith: (a, b) =>
-        (a, b)
+    def ^~[B](fb: => F[B]): F[(A, B)] =
+      def g(a: A)(b: B): (A, B) = (a, b)
+      g <#> fa <*> fb
+
+  extension [F[_]: Applicative, A <: Tuple](using ev: A <:< Tuple)(fa: F[A])
+    def ^~[B](fb: => F[B]): F[Tuple.Append[A, B]] =
+      def g(a: A)(b: B) = a :* b
+      g <#> fa <*> fb
 
   extension [F[_]: Applicative, A, B](fab: (F[A], F[B]))
     def mapWith[C](f: (A, B) => C): F[C] =
