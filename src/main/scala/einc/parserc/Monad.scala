@@ -13,6 +13,7 @@ trait Monad[F[_]]:
 object MonadOps:
   extension [F[_]: Monad, A](fa: F[A])
     def >>[B](fb: => F[B]): F[B] = fa >>= (_ => fb)
+    def <<[B](fb: => F[B]): F[A] = fa >>= (a => fb >>= (_ => a.inject))
 
   extension [F[_]](inst: Monad[F])
     def asApplicative: Applicative[F] = new Applicative[F]:
