@@ -93,3 +93,8 @@ class SpanPrinter(source: String, contextLines: Int = 0, marker: Char = '^', mar
 
     sb.result()
 
+extension (source: String)
+  def showMessageWithSpan(span: Span, msg: String, addenda: List[String]): String =
+    val printer = new SpanPrinter(source)
+    printer.show(span, msg, addenda)
+

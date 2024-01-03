@@ -20,48 +20,121 @@ object SourcePos:
   def init: SourcePos = SourcePos(0)
 
 case class ParseContext(descs: List[String]):
+  import ParseContext.*
+
+  val uniqId: Int =
+    numCtx += 1
+    numCtx
+
   def withDesc(desc: String): ParseContext = ParseContext(desc :: descs)
 
+  def dropDesc: ParseContext = copy(descs = Nil)
+
 object ParseContext:
+  private var numCtx: Int = 0
+
   def empty: ParseContext = ParseContext(Nil)
+
 
 def ctx(using ctx: ParseContext): ParseContext = ctx
 
 sealed trait ParseOutcome[+X]:
   def addAlts(alts: List[ParseError]): ParseOutcome[X] = this match
-    case err @ ParseError(msg, pos, alts1) => err.derivedParseError(msg, pos, alts1 ++ alts)
+    case err @ ParseError(msg, pos, alts1, from) => err.derivedParseError(msg, pos, alts1 ++ alts, from)
     case res @ ParseOk(x, next, altErrors) => res.copy(altErrors = altErrors ++ alts)
 
-case class ParseError(msg: String, pos: SourcePos, alts: List[ParseError])(using ctx: ParseContext) extends ParseOutcome[Nothing]:
+  def maybeSelectErrors: ParseOk[X] | List[ParseError] = this match
+    case err @ ParseError(msg, pos, alts1, from) => err.selectErrors
+    case res @ ParseOk(x, next, altErrors) => res
+
+object ParseError:
+  private var cnt: Int = 0
+
+case class ParseError(msg: String, pos: SourcePos, alts: List[ParseError], parsedFrom: SourcePos)(using ctx: ParseContext) extends ParseOutcome[Nothing]:
+  val uniqId: Int =
+    ParseError.cnt += 1
+    ParseError.cnt
+
   val descs: List[String] = ctx.descs
 
   override def toString(): String =
-    s"ParseError($msg, $pos, $alts) under $descs"
+    s"ParseError($msg, $pos) under $descs with id $uniqId"
 
-  def derivedParseError(msg1: String, pos1: SourcePos, alts1: List[ParseError]): ParseError =
-    ParseError(msg1, pos1, alts1)
+  def show: String =
+    var errors = selectErrors
+    val (msg, addenda) =
+      if errors.exists(_.descs.nonEmpty) then
+        errors = errors.filter(_.descs.nonEmpty)
+        ???
+      else
+        (errors.head.msg, Nil)
+    ???
 
-case class ParseOk[X](x: X, next: ParseInput, altErrors: List[ParseError]) extends ParseOutcome[X]
+  //assert(uniqId != 12, this)
+
+  def derivedParseError(msg1: String, pos1: SourcePos, alts1: List[ParseError], from1: SourcePos): ParseError =
+    val result = ParseError(msg1, pos1, alts1, from1)
+    //println(s"DERIVATION: $uniqId ---> ${result.uniqId}")
+    result
+
+  def selectErrors: List[ParseError] =
+    var selected: List[ParseError] = this :: Nil
+    var furthest: Int = pos.pos
+    @annotation.tailrec def go(errors: List[ParseError]): Unit = errors match
+      case Nil =>
+      case error :: errors =>
+        if error.pos.pos > furthest then
+          selected = error :: Nil
+          furthest = error.pos.pos
+        else if error.pos.pos == furthest then
+          selected = error :: selected
+        go(errors)
+    go(alts)
+    selected
+
+case class ParseOk[+X](x: X, next: ParseInput, altErrors: List[ParseError]) extends ParseOutcome[X]
 
 trait Parser[+X]:
+  import Parser.numParsers
+
+  val uniqId: Int =
+    numParsers += 1
+    numParsers
+
+  //assert(uniqId != 128)
+
   def run(input: ParseInput)(using ctx: ParseContext): ParseOutcome[X]
 
+  def runParser(input: ParseInput)(using ctx: ParseContext): ParseOutcome[X] =
+    run(input) match
+      case err @ ParseError(msg, pos, alts, from) =>
+        //if err.uniqId == 12 then println(s"!!! $err thrown by parser $uniqId")
+        err
+      case res @ ParseOk(x, next, altErrors) => res
+
   def withDesc(desc: String): Parser[X] = Parser: input =>
-    run(input)(using ctx.withDesc(desc))
+    runParser(input)(using ctx.withDesc(desc))
+
+  def dropDesc: Parser[X] = Parser: input =>
+    runParser(input)(using ctx.dropDesc)
 
 object Parser:
+  private var numParsers: Int = 0
+
   def apply[X](f: ParseInput => ParseContext ?=> ParseOutcome[X]): Parser[X] =
     new Parser[X]:
       def run(input: ParseInput)(using ctx: ParseContext): ParseOutcome[X] = f(input)
 
-  def fail[X](msg: String): Parser[X] = Parser: _ =>
-    ParseError(msg, SourcePos(0), Nil)
+  def fail[X](msg: String): Parser[X] = Parser: i =>
+    ParseError(msg, SourcePos(0), Nil, i.current)
 
   def flatten[X](ppa: Parser[Parser[X]]): Parser[X] = Parser: input =>
-    ppa.run(input) match
-      case e @ ParseError(ctx, pos, alts) => e
-      case ParseOk(pa, input1, altErrors1) => pa.run(input1) match
-        case e @ ParseError(ctx, pos, alts) => ParseError(ctx, pos, altErrors1 ++ alts)
+    ppa.runParser(input) match
+      case e @ ParseError(ctx, pos, alts, from) => e
+      case ParseOk(pa, input1, altErrors1) => pa.runParser(input1) match
+        case e @ ParseError(ctx, pos, alts, from) =>
+          //ParseError(ctx, pos, altErrors1 ++ alts, input.current)
+          e.derivedParseError(ctx, pos, altErrors1 ++ alts, input.current)
         case ParseOk(x, next, altErrors2) => ParseOk(x, next, altErrors1 ++ altErrors2)
 
   given parserIsApplicative: Applicative[Parser] with
@@ -69,8 +142,8 @@ object Parser:
       ParseOk(x, i, Nil)
 
     extension [A](fa: Parser[A]) def map[B](op: A => B): Parser[B] = Parser: i =>
-      fa.run(i) match
-        case err @ ParseError(msg, pos, alts) => err
+      fa.runParser(i) match
+        case err @ ParseError(msg, pos, alts, from) => err
         case ParseOk(x, next, altErrors) => ParseOk(op(x), next, altErrors)
 
     extension [A, B](ff: Parser[A => B]) def <*>(fa: => Parser[A]): Parser[B] =
@@ -83,12 +156,11 @@ object Parser:
     extension [A](fa: Parser[A])
       def flatMap[B](op: A => Parser[B]): Parser[B] = flatten(op <#> fa)
 
-
   given parserIsAlternative: Alternative[Parser] with
     def fail[X]: Parser[X] = Parser.fail("none of the alternative matches")
 
-    extension [A](pa: Parser[A]) 
+    extension [A](pa: Parser[A])
       def <|>[B](pb: => Parser[B]): Parser[A | B] = Parser: input =>
-        pa.run(input) match
-          case err @ ParseError(msg, pos, alts1) => pb.run(input).addAlts(err :: alts1)
+        pa.runParser(input) match
+          case err @ ParseError(msg, pos, alts1, from) => pb.runParser(input).addAlts(err :: alts1)
           case res @ ParseOk(x, next, altErrors) => res

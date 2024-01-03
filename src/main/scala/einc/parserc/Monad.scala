@@ -25,7 +25,7 @@ object MonadOps:
 
       def pure[X](x: X): F[X] = x.inject
 
-      extension [A](fa: F[A]) 
+      extension [A](fa: F[A])
         def map[B](op: A => B): F[B] = fa.flatMap: a =>
           op(a).inject
 
