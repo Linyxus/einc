@@ -60,16 +60,6 @@ case class ParseError(msg: String, pos: SourcePos, alts: List[ParseError], parse
   override def toString(): String =
     s"ParseError($msg, $pos) under $descs with id $uniqId"
 
-  def show: String =
-    var errors = selectErrors
-    val (msg, addenda) =
-      if errors.exists(_.descs.nonEmpty) then
-        errors = errors.filter(_.descs.nonEmpty)
-        ???
-      else
-        (errors.head.msg, Nil)
-    ???
-
   //assert(uniqId != 12, this)
 
   def derivedParseError(msg1: String, pos1: SourcePos, alts1: List[ParseError], from1: SourcePos): ParseError =

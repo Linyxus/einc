@@ -5,12 +5,15 @@ import einc.core.*
 class SpanPrinter(source: String, contextLines: Int = 0, marker: Char = '^', markerMore: Char = '~') extends Printer:
   val sourceLines: List[String] = source.linesWithSeparators.toList
 
+  val lastLino: Int = 0.max(sourceLines.length - 1)
+  val lastCol: Int = getLine(lastLino).length
+
   def locatePos(idx: Int): (Int, Int) =
     var lino = 0
     var col = 0
-    @annotation.tailrec def go(rest: Int): (Int, Int) =
-      if rest <= 0 then (lino, col)
-      else if lino >= sourceLines.length then (lino, 0)
+    @annotation.tailrec def go(rest: Int): Unit =
+      if rest <= 0 then ()
+      else if lino >= sourceLines.length then (lastLino, lastCol)
       else
         val line = sourceLines(lino)
         if col >= line.length - 1 then
@@ -21,6 +24,14 @@ class SpanPrinter(source: String, contextLines: Int = 0, marker: Char = '^', mar
           col += 1
           go(rest - 1)
     go(idx)
+    if lino >= sourceLines.length then
+      lino = lastLino
+      col = lastCol
+    (lino, col)
+
+  def getLine(lino: Int): String =
+    if lino < sourceLines.length then sourceLines(lino)
+    else ""
 
   def show(span: Span, msg: String, addenda: List[String]): String =
     val Span(start, length) = span
@@ -31,9 +42,6 @@ class SpanPrinter(source: String, contextLines: Int = 0, marker: Char = '^', mar
     val linoWidth = maxLino.toString.length
     val prefixLen = 4 + linoWidth
 
-    def getLine(lino: Int): String =
-      if lino < sourceLines.length then sourceLines(lino)
-      else ""
     def showLine(lino: Int): String =
       val linoStr = leftPad((lino + 1).toString, linoWidth, padding = ' ')
       var line = getLine(lino)

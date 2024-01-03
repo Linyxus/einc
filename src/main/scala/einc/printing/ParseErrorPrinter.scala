@@ -55,12 +55,28 @@ class ParseErrorPrinter(source: String, err: ParseError) extends Printer:
 
   val span: Span = Span(selectedErrors.head.pos.pos, 1)
 
+  def describe(err: ParseError): Option[String] = err.descs match
+    case Nil => None
+    case x :: Nil => Some(x)
+    case x1 :: x2 :: Nil => Some(s"$x1 when parsing $x2")
+    case x1 :: x2 :: x3 :: _ => Some(s"$x1 as part of $x2 when parsing $x3")
+
   def show: String =
     val (msg, addenda) =
-      if selectedErrors.exists(_.descs.nonEmpty) then
-        val selected = selectedErrors.filter(_.descs.nonEmpty)
-        ???
-      else
-        (selectedErrors.head.msg, "This is a parsing error." :: Nil)
-    msg.showMessageWithSpan(span, msg, addenda)
+      val descStrs = selectedErrors.flatMap(describe)
+      descStrs match
+        case Nil =>
+          (selectedErrors.head.msg, "This is a parsing error." :: Nil)
+        case x :: Nil =>
+          ("Unexpected input\n", s"This is a parsing error. Expecting $x" :: Nil)
+        case xs =>
+          val strs = xs.map(x => s" - $x")
+          ("Unexpected input\n", s"This is a parsing error. Expecting one of the following:\n" :: strs)
+    source.showMessageWithSpan(span, msg, addenda)
+
+extension (err: ParseError)
+  def show(source: String): String =
+    val printer = ParseErrorPrinter(source, err)
+    val str: String = printer.show
+    str
 
