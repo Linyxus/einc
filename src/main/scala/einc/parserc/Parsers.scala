@@ -21,6 +21,10 @@ object Parsers:
           if pred(ch) then ParseOk(ch, input.forward, Nil)
           else ParseError(msg, input.current, Nil, input.current)
 
+  /** Read the current position of parsing */
+  def currentPos: Parser[SourcePos] = Parser: input =>
+    ParseOk(input.current, input, Nil)
+
   /** A parser that asserts EOF */
   def eof: Parser[Unit] = Parser: input =>
     input.currentChar match
@@ -36,6 +40,20 @@ object Parsers:
       ParseOk((), ParseInput(input.source, SourcePos(input.current.pos + s.length)), Nil)
     else
       ParseError(s"expected string `$s`", input.current, Nil, input.current)
+
+  def whileP(p: Char => Boolean): Parser[String] = Parser: input =>
+    var current = input
+    @annotation.tailrec def go(): Unit =
+      current.currentChar match
+        case Some(ch) if p(ch) =>
+          current = current.forward
+          go()
+        case _ =>
+    go()
+    val str = input.source.substring(input.current.pos, current.current.pos)
+    ParseOk(str, current, Nil)
+
+  def untilP(p: Char => Boolean): Parser[String] = whileP(!p(_))
 
   /** Alphabetic characters */
   def alpha: Parser[Char] = predicate(_.isLetter, errMsg = "unexpected character when looking for an alphabetic character")
@@ -59,3 +77,6 @@ object Parsers:
     def optional: Parser[Option[X]] = px.map(Some(_)) <|> None.embed
 
     def trailingSpaces: Parser[X] = px << whitespace.many.dropDesc
+
+    def surroundedBy(l: Parser[Any], r: Parser[Any]): Parser[X] =
+      l >> px << r
