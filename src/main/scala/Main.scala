@@ -30,7 +30,7 @@ def testStr[X](s: String, p: Parser[X]): Unit =
     case err: ParseError =>
       println(err.show(s))
     case res @ ParseOk(x, next, altErrors) =>
-      println(s"OK: $res")
+      println(s"OK: $x, next = $next")
 
 def urlTest: Unit =
   val pname = alpha.withDesc("alphabetic character").some.map(_.mkString).withDesc("a subdomain")
@@ -105,6 +105,56 @@ def add = x + y
   println(printer.sourceLines)
   println(printer.show(Span(1, 20), "test", List("test")))
 
+def expressionTest: Unit =
+  import parsing.Parsers.*
+  import parsing.ExprParser
+  import ExprParser.*
+  import core.untpd.*
+  import Expr.*
+
+  val identP: Parser[Ident] = nameP.map(Ident.apply)
+
+  val builder: ExprParser = new ExprParser:
+    def atom: Parser[Expr] = identP
+
+  import RulePart.*
+  val rules: List[ParseRule] = List(
+    ParseRule(Precedence(50), Rec(Precedence(50)) :: Operator("+") :: Rec(Precedence(51)) :: Nil, es => Apply(Ident("add"), List(es(0), es(1)))),
+    ParseRule(Precedence(60), Rec(Precedence(60)) :: Operator("*") :: Rec(Precedence(61)) :: Nil, es => Apply(Ident("mult"), List(es(0), es(1)))),
+    ParseRule(Precedence(40), Rec(Precedence(41)) :: Operator("::") :: Rec(Precedence(40)) :: Nil, es => Apply(Ident("cons"), List(es(0), es(1)))),
+  )
+  builder.installRules(rules)
+
+  // testStr("a + b + c", builder.getParser(Precedence(0)) << eof)
+  // testStr("a + b * c", builder.getParser(Precedence(0)) << eof)
+  // testStr("a * b * c", builder.getParser(Precedence(0)) << eof)
+  // testStr("a * b + c", builder.getParser(Precedence(0)) << eof)
+  testStr("a :: b :: c + d", builder.getParser(Precedence(0)) << eof)
+
+def eincExprTest: Unit =
+  import parsing.Parsers.*
+  import core.untpd.*
+
+  testStr("a", expression.eincExprParser.exprP)
+  testStr("\"hello, world\"", expression.eincExprParser.exprP)
+  testStr("12123", expression.eincExprParser.exprP)
+  testStr("add(1, 2)", expression.eincExprParser.exprP)
+  testStr("add()", expression.eincExprParser.exprP)
+  testStr("add(1)(2)", expression.eincExprParser.exprP)
+  testStr("(x:Type,y) => x", expression.eincExprParser.exprP << eof)
+
+def notationRuleTest: Unit =
+  import parsing.Parsers.notationRule
+  import notationRule.*
+  testStr("x:1", identP)
+  testStr("\"+\"", operatorP)
+  testStr("lhs:50 \"+\" rhs:51", patternP)
+  testStr("lhs:50 \"+\" rhs:", patternP <* eof)
+  testStr("notation:123", keywordP)
+  testStr("notation", keywordP)
+  testStr("notation:50 lhs:50 \"+\" rhs:51 => lhs", parser <* eof)
+  testStr("notation:50 lhs \"+\" rhs => lhs", parser <* eof)
+
 @main def main: Unit =
   println("... Parsing tests ...")
   // println("--- Basic ---")
@@ -113,8 +163,15 @@ def add = x + y
   // println("--- URL ---")
   // urlTest
 
-  println("--- List literal ---")
-  listLiteralTest
+  // println("--- List literal ---")
+  // listLiteralTest
+
+  println("--- Einc expression ---")
+  // expressionTest
+  eincExprTest
+
+  // println("--- Einc notation rule ---")
+  // notationRuleTest
 
   // println("... Printer tests ...")
   // println("--- Basic ---")

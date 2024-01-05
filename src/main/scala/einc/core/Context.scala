@@ -1,6 +1,6 @@
 package einc.core
 
-case class Context(errors: List[Error])
+class Context
 
 object Context:
   def ctx(using Context): Context = summon

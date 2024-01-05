@@ -12,19 +12,42 @@ import AlternativeOps.*
 
 object Parsers:
   import untpd.*
+
+  extension [X <: Positioned](using X <:< Positioned)(px: Parser[X])
+    def setPos: Parser[X] =
+      (originalSource ^~ currentPos ^~ px ^~ currentPos).map: (source, start, x, finish) =>
+        x.withPos(SourceSpan(source, Span.fromSourcePos(start, finish)))
+
+  extension [X](px: Parser[X])
+    def inParens: Parser[X] =
+      px.surroundedBy(string("(").ts.withDesc("`(`"), string(")").withDesc("`)`"))
+
+  val KEYWORD_LIST = Set(
+    "val",
+    "def",
+    "match",
+    "with"
+  )
+
   val nameP: Parser[String] =
     val p =
       (alpha.withDesc("an alphabetic character").withDesc("start of an identifier") ^~ whileP(ch => ch.isLetterOrDigit || ch == '-').withDesc("the remaining of an identifier")).map: (x, xs) =>
         x.toString + xs
-    p.withDesc("an identifier")
+    p.flatMap: name =>
+      if KEYWORD_LIST.contains(name) then
+        fail("Invalid identifier name: `$name` is a keyword")
+      else name.inject
 
-  val exprP: Parser[Expr] = nameP.map(Ident(_))
+  val exprP: Parser[Expr] = nameP.map(Expr.Ident(_))
+
+  def keyword(text: String): Parser[Unit] =
+    string(text).withDesc(s"`$text`")
 
   val numberP: Parser[String] =
     digit.withDesc("a digit").some.map(_.mkString)
 
   val stringLitP: Parser[String] =
-    val p = whileP(_ != '"')
+    val p = whileP(_ != '"', toAvoid = _ == '\n')
     val delimiter = char('"').withDesc("`\"`")
     p.surroundedBy(delimiter, delimiter)
 
@@ -32,7 +55,7 @@ object Parsers:
   object notationRule:
     /** Parses `ident:prec` in the pattern */
     val identP: Parser[NotationPatternPart.Ident] =
-      (nameP ^~ char(':').withDesc("`:`") ^~ numberP.withDesc("precedence")).map: (ident, _, prec) =>
+      (nameP.withDesc("name of the identifier") ^~ keyword(":") ^~ numberP.withDesc("precedence")).map: (ident, _, prec) =>
         NotationPatternPart.Ident(ident, prec.toInt)
 
     /** Parses operators in the pattern */
@@ -46,13 +69,77 @@ object Parsers:
 
     /** Parses the part `notation:prec` */
     val keywordP: Parser[Int] =
-      (string("notation").withDesc("`notation`") >> char(':').withDesc("`:`") >> numberP.withDesc("precedence")).map(_.toInt)
+      (keyword("notation") >> keyword(":") >> numberP.withDesc("precedence")).map(_.toInt)
 
     val ruleP: Parser[NotationRule] =
-      (keywordP.withDesc("the `notation` keyword").trailingSpaces
+      (keywordP.withDesc("the `notation` keyword").trailingSpaces1
         ^~ patternP.withDesc("a notation pattern").trailingSpaces
-        ^~ string("=>").withDesc("`=>`").trailingSpaces
+        ^~ keyword("`=>`").trailingSpaces
         ^~ exprP.withDesc("rhs of the notation rule")).map: (prec, pattern, _, rhs) =>
           NotationRule(prec, pattern, rhs)
 
     val parser: Parser[NotationRule] = ruleP.withDesc("a notation rule")
+
+  object typeExpr:
+    import TypeExpr.*
+    val parser: Parser[TypeExpr] =
+      nameP.withDesc("type name").map(Ident(_)).setPos
+
+  object definition:
+    val valDefP: Parser[ValDef] =
+      val p =
+        (keyword("val").ts ^~ nameP.ts.withDesc("binding name") ^~ keyword("=").ts ^~ exprP).map: (_, name, _, body) =>
+          ValDef(name, body)
+      p.setPos
+
+    def parser: Parser[Definition] = valDefP
+
+    def localParser: Parser[LocalDef] = valDefP
+
+  object expression:
+    import ExprParser.*
+    import Expr.*
+
+    val identP: Parser[Ident] = nameP.withDesc("an identifier").map(Ident(_))
+
+    val intLitP: Parser[IntLit] = numberP.withDesc("a number literal").map(x => IntLit(x.toInt))
+
+    val strLitP: Parser[StringLit] = stringLitP.withDesc("a string literal").map(StringLit(_))
+
+    def parser: Parser[Expr] = eincExprParser.exprP
+
+    object eincExprParser extends ExprParser:
+      val baseP: Parser[Expr] =
+        identP
+          <|> intLitP
+          <|> strLitP
+          <|> exprP.ts.surroundedBy(string("(").ts.withDesc("`(`"), string(")").withDesc("`)`"))
+
+      val applyP: Parser[Expr] =
+        val args = exprP.ts.sepBy(string(",").ts.withDesc("`,`"))
+        val argList = currentPos ^~ args.withDesc("function arguments").surroundedBy(string("(").ts.withDesc("`(`"), string(")").withDesc("`)`")) ^~ currentPos
+        val argLists = argList.many
+        @annotation.tailrec def recur(source: String, head: Expr, argss: List[(SourcePos, List[Expr], SourcePos)]): Expr = argss match
+          case Nil => head
+          case (start, args, finish) :: argss => recur(source, Apply(head, args).withPos(SourceSpan(source, Span.fromSourcePos(start, finish))), argss)
+        (originalSource ^~ baseP ^~ argLists).map: (source, head, argss) =>
+          recur(source, head, argss)
+      val lambdaP: Parser[Expr] =
+        val singleParamP: Parser[List[LambdaParam]] =
+          nameP.withDesc("parameter name").map(LambdaParam(_, None)).setPos.map(List(_))
+        val paramP: Parser[LambdaParam] =
+          val p =
+            (nameP.withDesc("parameter name").ts ^~ (string(":").ts.withDesc("`:`") >> typeExpr.parser.withDesc("parameter type")).optional).map: (name, typ) =>
+              LambdaParam(name, typ)
+          p.setPos
+        val normalParamListP: Parser[List[LambdaParam]] =
+          paramP.ts.sepBy(string(",").ts.withDesc("`,`")).ts.inParens
+        val paramListP = singleParamP <|> normalParamListP
+        val p =
+          (paramListP.withDesc("the parameter list of a lambda").ts ^~ string("=>").ts.withDesc("`=>`") ^~ exprP.withDesc("the body of a lambda")).map: (params, _, body) =>
+            Lambda(params, body)
+        p
+
+      def atom: Parser[Expr] = lambdaP.withDesc("a lambda") <|> applyP
+
+      def exprP: Parser[Expr] = getParser(Precedence.MIN).setPos

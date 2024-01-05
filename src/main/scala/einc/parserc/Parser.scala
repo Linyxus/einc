@@ -116,7 +116,7 @@ object Parser:
       def run(input: ParseInput)(using ctx: ParseContext): ParseOutcome[X] = f(input)
 
   def fail[X](msg: String): Parser[X] = Parser: i =>
-    ParseError(msg, SourcePos(0), Nil, i.current)
+    ParseError(msg, i.current, Nil, i.current)
 
   def flatten[X](ppa: Parser[Parser[X]]): Parser[X] = Parser: input =>
     ppa.runParser(input) match

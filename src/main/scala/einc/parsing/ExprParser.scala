@@ -57,6 +57,7 @@ object ExprParser:
 
   object Precedence:
     def MAX: Precedence = Precedence(1024)
+    def MIN: Precedence = Precedence(0)
 
   enum RulePart:
     case Rec(precedence: Precedence)

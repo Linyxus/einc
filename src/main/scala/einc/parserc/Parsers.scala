@@ -26,6 +26,9 @@ object Parsers:
   def currentPos: Parser[SourcePos] = Parser: input =>
     ParseOk(input.current, input, Nil)
 
+  def originalSource: Parser[String] = Parser: input =>
+    ParseOk(input.source, input, Nil)
+
   /** A parser that asserts EOF */
   def eof: Parser[Unit] = Parser: input =>
     input.currentChar match
@@ -42,19 +45,31 @@ object Parsers:
     else
       ParseError(s"expected string `$s`", input.current, Nil, input.current)
 
-  def whileP(p: Char => Boolean): Parser[String] = Parser: input =>
+  def lookaheadStr(text: String): Parser[Unit] = Parser: input =>
+    if input.source.substring(input.current.pos).startsWith(text) then
+      ParseOk((), input, Nil)
+    else ParseError(s"expected string `$text`", input.current, Nil, input.current)
+
+  def whileP(p: Char => Boolean, toAvoid: Char => Boolean = ch => false): Parser[String] = Parser: input =>
     var current = input
+    var errMsg: Option[String] = None
     @annotation.tailrec def go(): Unit =
       current.currentChar match
+        case Some(ch) if toAvoid(ch) =>
+          errMsg = Some(s"unexpected character `$ch`")
         case Some(ch) if p(ch) =>
           current = current.forward
           go()
         case _ =>
     go()
-    val str = input.source.substring(input.current.pos, current.current.pos)
-    ParseOk(str, current, Nil)
+    errMsg match
+      case None =>
+        val str = input.source.substring(input.current.pos, current.current.pos)
+        ParseOk(str, current, Nil)
+      case Some(msg) =>
+        ParseError(msg, current.current, Nil, input.current)
 
-  def untilP(p: Char => Boolean): Parser[String] = whileP(!p(_))
+  def untilP(p: Char => Boolean, toAvoid: Char => Boolean = ch => false): Parser[String] = whileP(!p(_), toAvoid)
 
   /** Alphabetic characters */
   def alpha: Parser[Char] = predicate(_.isLetter, errMsg = "unexpected character when looking for an alphabetic character")
@@ -78,6 +93,12 @@ object Parsers:
     def optional: Parser[Option[X]] = px.map(Some(_)) <|> None.embed
 
     def trailingSpaces: Parser[X] = px << whitespace.many.dropDesc
+
+    def trailingSpaces1: Parser[X] = px << whitespace.some.dropDesc
+
+    def ts: Parser[X] = trailingSpaces
+
+    def ts1: Parser[X] = trailingSpaces1
 
     def surroundedBy(l: Parser[Any], r: Parser[Any]): Parser[X] =
       l >> px << r
