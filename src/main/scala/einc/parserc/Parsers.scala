@@ -29,6 +29,9 @@ object Parsers:
   def originalSource: Parser[String] = Parser: input =>
     ParseOk(input.source, input, Nil)
 
+  def getCtx: Parser[ParseContext] = Parser: input =>
+    ParseOk(ctx, input, Nil)
+
   /** A parser that asserts EOF */
   def eof: Parser[Unit] = Parser: input =>
     input.currentChar match
@@ -91,14 +94,6 @@ object Parsers:
           x :: xs
 
     def optional: Parser[Option[X]] = px.map(Some(_)) <|> None.embed
-
-    def trailingSpaces: Parser[X] = px << whitespace.many.dropDesc
-
-    def trailingSpaces1: Parser[X] = px << whitespace.some.dropDesc
-
-    def ts: Parser[X] = trailingSpaces
-
-    def ts1: Parser[X] = trailingSpaces1
 
     def surroundedBy(l: Parser[Any], r: Parser[Any]): Parser[X] =
       l >> px << r

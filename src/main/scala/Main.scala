@@ -62,37 +62,38 @@ def urlTest: Unit =
   testStr("tcp://.google.com", url)
 
 def listLiteralTest: Unit =
-  val identP: Parser[String] =
-    alpha.withDesc("alphabetic character").some.map(_.mkString).withDesc("an identifier").trailingSpaces
-  // println("hello".parseWith(identP << eof))
-  // println("hello  ".parseWith(identP << eof))
-  // println("helloworld123  ".parseWith(identP << eof).maybeSelectErrors)
+  ()
+  // val identP: Parser[String] =
+  //   alpha.withDesc("alphabetic character").some.map(_.mkString).withDesc("an identifier").trailingSpaces
+  // // println("hello".parseWith(identP << eof))
+  // // println("hello  ".parseWith(identP << eof))
+  // // println("helloworld123  ".parseWith(identP << eof).maybeSelectErrors)
 
-  val numberP: Parser[Int] =
-    digit.withDesc("digit character").some.map(_.mkString.toInt).withDesc("a number").trailingSpaces
-  // println("123123  ".parseWith(numberP << eof).maybeSelectErrors)
-  // println("123123u  ".parseWith(numberP << eof).maybeSelectErrors)
+  // val numberP: Parser[Int] =
+  //   digit.withDesc("digit character").some.map(_.mkString.toInt).withDesc("a number").trailingSpaces
+  // // println("123123  ".parseWith(numberP << eof).maybeSelectErrors)
+  // // println("123123u  ".parseWith(numberP << eof).maybeSelectErrors)
 
-  val comma: Parser[Unit] =
-    char(',').withDesc("`,`").trailingSpaces
+  // val comma: Parser[Unit] =
+  //   char(',').withDesc("`,`").trailingSpaces
 
-  val leftParen: Parser[Unit] =
-    char('[').withDesc("`[`").trailingSpaces
+  // val leftParen: Parser[Unit] =
+  //   char('[').withDesc("`[`").trailingSpaces
 
-  val rightParen: Parser[Unit] =
-    char(']').withDesc("`]`").trailingSpaces
+  // val rightParen: Parser[Unit] =
+  //   char(']').withDesc("`]`").trailingSpaces
 
-  val elemP: Parser[String | Int] =
-    (identP <|> numberP)
-  val listP: Parser[List[String | Int]] =
-    (leftParen >> elemP.sepBy(comma) << rightParen).withDesc("a list literal").withDesc("an expression").withDesc("the program")
+  // val elemP: Parser[String | Int] =
+  //   (identP <|> numberP)
+  // val listP: Parser[List[String | Int]] =
+  //   (leftParen >> elemP.sepBy(comma) << rightParen).withDesc("a list literal").withDesc("an expression").withDesc("the program")
 
-  //testStr("[1, 2, 3]", listP)
-  testStr("[1, 2, ]", listP << eof)
-  testStr("[1, 2, a123]", listP << eof)
-  testStr("[1, 2,,]", listP << eof)
-  testStr("[1, 2]]", listP << eof)
-  testStr("[123,123123,abc", listP << eof)
+  // //testStr("[1, 2, 3]", listP)
+  // testStr("[1, 2, ]", listP << eof)
+  // testStr("[1, 2, a123]", listP << eof)
+  // testStr("[1, 2,,]", listP << eof)
+  // testStr("[1, 2]]", listP << eof)
+  // testStr("[123,123123,abc", listP << eof)
 
 def printerTest: Unit =
   import printing.*
@@ -142,6 +143,26 @@ def eincExprTest: Unit =
   testStr("add()", expression.eincExprParser.exprP)
   testStr("add(1)(2)", expression.eincExprParser.exprP)
   testStr("(x:Type,y) => x", expression.eincExprParser.exprP << eof)
+  testStr("x =>\n    y =>\n    z =>\n  add(x\n, y, z)", expression.eincExprParser.exprP << eof)
+
+def eincDefTest: Unit =
+  import parsing.Parsers.*
+  import core.untpd.*
+
+  testStr("val x = a", definition.parser)
+  var source = """
+val x =
+  val a = (x, y) =>
+    val z = 1
+    mul(x, y)
+  val b = 2
+  val c = foo(
+    bar,,
+    baz
+  )
+  add(a, b)
+"""
+  testStr(source, initWS >> definition.parser << ws << eof)
 
 def notationRuleTest: Unit =
   import parsing.Parsers.notationRule
@@ -166,9 +187,12 @@ def notationRuleTest: Unit =
   // println("--- List literal ---")
   // listLiteralTest
 
-  println("--- Einc expression ---")
+  // println("--- Einc expression ---")
   // expressionTest
-  eincExprTest
+  // eincExprTest
+
+  println("--- Einc definition ---")
+  eincDefTest
 
   // println("--- Einc notation rule ---")
   // notationRuleTest

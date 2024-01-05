@@ -19,22 +19,25 @@ case class ParseInput(source: String, current: SourcePos):
 object SourcePos:
   def init: SourcePos = SourcePos(0)
 
-case class ParseContext(descs: List[String]):
+case class ParseContext(descs: List[String], indentLevels: List[Int]):
   import ParseContext.*
 
   val uniqId: Int =
     numCtx += 1
     numCtx
 
-  def withDesc(desc: String): ParseContext = ParseContext(desc :: descs)
+  def withDesc(desc: String): ParseContext = copy(descs = desc :: descs)
 
   def dropDesc: ParseContext = copy(descs = Nil)
+
+  def withIndentLevel(newLevel: Int): ParseContext = copy(indentLevels = newLevel :: indentLevels)
+
+  def indentLevel: Int = indentLevels.headOption.getOrElse(0)
 
 object ParseContext:
   private var numCtx: Int = 0
 
-  def empty: ParseContext = ParseContext(Nil)
-
+  def empty: ParseContext = ParseContext(Nil, Nil)
 
 def ctx(using ctx: ParseContext): ParseContext = ctx
 

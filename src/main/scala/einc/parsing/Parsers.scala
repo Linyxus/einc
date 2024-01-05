@@ -18,9 +18,66 @@ object Parsers:
       (originalSource ^~ currentPos ^~ px ^~ currentPos).map: (source, start, x, finish) =>
         x.withPos(SourceSpan(source, Span.fromSourcePos(start, finish)))
 
+  def whitespaces(atLeastOne: Boolean): Parser[Option[Int]] = Parser: input =>
+    var hasLineBreak: Boolean = false
+    var level: Int = 0
+    var consumed: Boolean = false
+    var now: ParseInput = input
+    @annotation.tailrec def go(): Unit =
+      now.currentChar match
+        case Some(ch) if ch.isWhitespace =>
+          if ch == '\n' then
+            hasLineBreak = true
+            level = 0
+          else
+            level += 1
+          now = now.forward
+          consumed = true
+          go()
+        case _ =>
+    go()
+    val res =
+      if hasLineBreak then Some(level) else None
+    if consumed || !atLeastOne then
+      ParseOk(res, now, Nil)
+    else
+      ParseError("At least one whitespace is expected here", now.current, Nil, input.current)
+
+  def consumeTS(atLeastOne: Boolean, sameLevel: Boolean = false): Parser[Unit] =
+    (getCtx ^~ whitespaces(atLeastOne)).flatMap:
+      case (ctx, Some(level)) if ctx.indentLevel >= level && !sameLevel =>
+        fail("This is misindented, a higher indent level is expected")
+      case (ctx, Some(level)) if ctx.indentLevel != level && sameLevel =>
+        fail("This is misindented, same indent level is expected")
+      case _ => ().inject
+
+  def ws: Parser[Unit] = whitespaces(atLeastOne = false) >> ().inject
+
+  def initWS: Parser[Unit] = consumeTS(atLeastOne = false, sameLevel = true) >> ().inject
+
+  def lineBreak: Parser[Unit] =
+    (getCtx ^~ whitespaces(atLeastOne = false)).flatMap: (ctx, mlevel) =>
+      mlevel match
+        case Some(level) if level == ctx.indentLevel => ().inject
+        case _ => fail(s"Not a line break at level ${ctx.indentLevel}")
+
   extension [X](px: Parser[X])
     def inParens: Parser[X] =
-      px.surroundedBy(string("(").ts.withDesc("`(`"), string(")").withDesc("`)`"))
+      px.tsSame.surroundedBy(string("(").ts.withDesc("`(`"), string(")").withDesc("`)`"))
+
+    def trailingSpaces: Parser[X] = px << consumeTS(atLeastOne = false).dropDesc
+
+    def trailingSpaces1: Parser[X] = px << consumeTS(atLeastOne = true).dropDesc
+
+    def ts: Parser[X] = trailingSpaces
+
+    def ts1: Parser[X] = trailingSpaces1
+
+    def tsSame: Parser[X] = px << consumeTS(atLeastOne = false, sameLevel = true).dropDesc
+
+    def indented(newLevel: Int): Parser[X] = Parser: input =>
+      px.runParser(input)(using ctx.withIndentLevel(newLevel))
+
 
   val KEYWORD_LIST = Set(
     "val",
@@ -35,10 +92,8 @@ object Parsers:
         x.toString + xs
     p.flatMap: name =>
       if KEYWORD_LIST.contains(name) then
-        fail("Invalid identifier name: `$name` is a keyword")
+        fail(s"Invalid identifier name: `$name` is a keyword")
       else name.inject
-
-  val exprP: Parser[Expr] = nameP.map(Expr.Ident(_))
 
   def keyword(text: String): Parser[Unit] =
     string(text).withDesc(s"`$text`")
@@ -75,7 +130,7 @@ object Parsers:
       (keywordP.withDesc("the `notation` keyword").trailingSpaces1
         ^~ patternP.withDesc("a notation pattern").trailingSpaces
         ^~ keyword("`=>`").trailingSpaces
-        ^~ exprP.withDesc("rhs of the notation rule")).map: (prec, pattern, _, rhs) =>
+        ^~ expression.parser.withDesc("rhs of the notation rule")).map: (prec, pattern, _, rhs) =>
           NotationRule(prec, pattern, rhs)
 
     val parser: Parser[NotationRule] = ruleP.withDesc("a notation rule")
@@ -88,9 +143,9 @@ object Parsers:
   object definition:
     val valDefP: Parser[ValDef] =
       val p =
-        (keyword("val").ts ^~ nameP.ts.withDesc("binding name") ^~ keyword("=").ts ^~ exprP).map: (_, name, _, body) =>
+        (keyword("val").ts ^~ nameP.ts.withDesc("binding name") ^~ keyword("=") ^~ expression.maybeBlockParser).map: (_, name, _, body) =>
           ValDef(name, body)
-      p.setPos
+      p.setPos.withDesc("value definition")
 
     def parser: Parser[Definition] = valDefP
 
@@ -108,6 +163,8 @@ object Parsers:
 
     def parser: Parser[Expr] = eincExprParser.exprP
 
+    def maybeBlockParser: Parser[Expr] = eincExprParser.maybeBlockP
+
     object eincExprParser extends ExprParser:
       val baseP: Parser[Expr] =
         identP
@@ -116,8 +173,8 @@ object Parsers:
           <|> exprP.ts.surroundedBy(string("(").ts.withDesc("`(`"), string(")").withDesc("`)`"))
 
       val applyP: Parser[Expr] =
-        val args = exprP.ts.sepBy(string(",").ts.withDesc("`,`"))
-        val argList = currentPos ^~ args.withDesc("function arguments").surroundedBy(string("(").ts.withDesc("`(`"), string(")").withDesc("`)`")) ^~ currentPos
+        val args = exprP.tsSame.sepBy(string(",").ts.withDesc("`,`"))
+        val argList = currentPos ^~ args.withDesc("function arguments").inParens ^~ currentPos
         val argLists = argList.many
         @annotation.tailrec def recur(source: String, head: Expr, argss: List[(SourcePos, List[Expr], SourcePos)]): Expr = argss match
           case Nil => head
@@ -133,12 +190,25 @@ object Parsers:
               LambdaParam(name, typ)
           p.setPos
         val normalParamListP: Parser[List[LambdaParam]] =
-          paramP.ts.sepBy(string(",").ts.withDesc("`,`")).ts.inParens
+          paramP.ts.sepBy(string(",").ts.withDesc("`,`")).inParens
         val paramListP = singleParamP <|> normalParamListP
         val p =
-          (paramListP.withDesc("the parameter list of a lambda").ts ^~ string("=>").ts.withDesc("`=>`") ^~ exprP.withDesc("the body of a lambda")).map: (params, _, body) =>
+          (paramListP.withDesc("the parameter list of a lambda").ts ^~ string("=>").withDesc("`=>`") ^~ maybeBlockP.withDesc("the body of a lambda")).map: (params, _, body) =>
             Lambda(params, body)
         p
+
+      def maybeBlockP: Parser[Expr] =
+        whitespaces(atLeastOne = false).flatMap:
+          case None => exprP
+          case Some(level) => getCtx.flatMap: ctx =>
+            if level <= ctx.indentLevel then
+              fail("Block is not right-indented")
+            else
+              val localDefs: Parser[List[LocalDef]] =
+                (definition.localParser << lineBreak).many
+              val p = (localDefs ^~ exprP).map: (localDefs, expr) =>
+                Block(localDefs, expr)
+              p.indented(level)
 
       def atom: Parser[Expr] = lambdaP.withDesc("a lambda") <|> applyP
 
