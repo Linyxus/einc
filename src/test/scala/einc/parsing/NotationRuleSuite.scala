@@ -17,4 +17,5 @@ class NotationRuleSuite extends munit.FunSuite:
     assertFailure("notation:50 lhs \"+\" rhs => lhs", notationRule.parser << eof)
     assertSuccess("notation:50 lhs:50 \"+\" rhs:51 => lhs", notationRule.parser << eof)
     assertFailure("notation: lhs:50 \"+\" rhs:51 => lhs", notationRule.parser << eof)
+    assertFailure("notation:50lhs:50 \"+\" rhs:51 => lhs", notationRule.parser << eof)
 
