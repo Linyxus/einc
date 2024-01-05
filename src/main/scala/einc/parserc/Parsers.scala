@@ -4,6 +4,7 @@ import Parser.{*, given}
 import FunctorOps.*
 import MonadOps.*
 import AlternativeOps.*
+import ApplicativeOps.*
 
 object Parsers:
   /** Helper function to quickly run a parser on a string */
@@ -80,3 +81,14 @@ object Parsers:
 
     def surroundedBy(l: Parser[Any], r: Parser[Any]): Parser[X] =
       l >> px << r
+
+  extension [X](pxs: List[Parser[X]])
+    def sepBy(psep: Parser[Any]): Parser[List[X]] = pxs match
+      case Nil => Nil.inject
+      case p0 :: pxs =>
+        def go(now: Parser[X], rest: List[Parser[X]]): Parser[List[X]] = rest match
+          case Nil => now.map(List(_))
+          case next :: rest =>
+            (now << psep ^~ go(next, rest)).map: (x, xs) =>
+              x :: xs
+        go(p0, pxs)

@@ -14,3 +14,9 @@ object AlternativeOps:
     def some(using Applicative[F], Alternative[F]): F[List[A]] =
       fa.map(x => (xs: List[A]) => x :: xs) <*> many
 
+  def choices[F[_]: Alternative, X](fxs: List[F[X]]): F[X] = fxs match
+    case x :: xs => x <|> choices(xs)
+    case Nil =>
+      val inst = summon[Alternative[F]]
+      inst.fail
+
