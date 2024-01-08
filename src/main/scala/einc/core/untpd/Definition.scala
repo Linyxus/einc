@@ -9,7 +9,7 @@ sealed trait LocalDef extends Definition
 object Definition:
   case class ValDef(name: String, body: Expr) extends LocalDef
 
-  sealed trait DefParam:
+  sealed trait DefParam extends Positioned:
     val name: String
   case class DefTypeParam(name: String) extends DefParam
   case class DefSynthesisParam(name: String, tpe: TypeExpr) extends DefParam

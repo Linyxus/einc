@@ -61,6 +61,9 @@ object Parsers:
 
   def ws: Parser[Unit] = whitespaces(atLeastOne = false) >> ().inject
 
+  /** Whitespaces on a higher indentation level */
+  def wsh: Parser[Unit] = consumeTS(atLeastOne = false, indentMode = Higher) >> ().inject
+
   def initWS: Parser[Unit] = consumeTS(atLeastOne = false, indentMode = SameLevel) >> ().inject
 
   def lineBreak: Parser[Unit] =
@@ -71,11 +74,13 @@ object Parsers:
 
   extension [X](px: Parser[X])
     def inParens: Parser[X] =
-      // TODO Check whether `tsSame` does the expected thing here (probably no)
       px.tsSame.surroundedBy(string("(").ts.withDesc("`(`"), string(")").withDesc("`)`"))
 
     def inBrackets: Parser[X] =
       px.tsSame.surroundedBy(keyword("[").ts, keyword("]"))
+
+    def inBraces: Parser[X] =
+      px.tsSame.surroundedBy(keyword("{").ts, keyword("}"))
 
     def trailingSpaces: Parser[X] = px << consumeTS(atLeastOne = false).dropDesc
 
@@ -155,6 +160,7 @@ object Parsers:
     val appliedTypeP: Parser[TypeExpr] =
       def params: Parser[List[TypeExpr]] =
         parser.sepBy1(consumeTS(atLeastOne = false, indentMode = IndentMode.Higher) >> keyword(",").ts).inBrackets
+
       (typeRefP.setPos ^~ params.optional).map: (head, args) =>
         args match
           case Some(args) => AppliedType(head, args)
@@ -196,11 +202,40 @@ object Parsers:
       val p =
         (keyword("val").ts ^~ nameP.ts.withDesc("binding name") ^~ keyword("=") ^~ expression.maybeBlockParser).map: (_, name, _, body) =>
           ValDef(name, body)
-      p.setPos.withDesc("value definition")
+      p.setPos.withDesc("a `val` definition")
+
+    val defDefP: Parser[DefDef] =
+      def typeParams: Parser[List[DefTypeParam]] =
+        nameP.map(DefTypeParam(_)).setPos.sepBy(wsh >> keyword(",") << wsh).inBrackets
+      def synParams: Parser[List[DefSynthesisParam]] =
+        (nameP.ts ^~ keyword(":").ts ^~ typeExpr.parser)
+          .map((name, _, tpe) => DefSynthesisParam(name, tpe)).setPos
+          .sepBy(wsh >> keyword(",") << wsh)
+          .inBraces
+      def termParams: Parser[List[DefTermParam]] =
+        (nameP.ts ^~ keyword(":").ts ^~ typeExpr.parser)
+          .map((name, _, tpe) => DefTermParam(name, tpe)).setPos
+          .sepBy(wsh >> keyword(",") << wsh)
+          .inParens
+      def paramList: Parser[DefParamList] =
+        typeParams.map(TypeParamList(_)).withDesc("a type parameter list")
+          <|> synParams.map(SynthesisParamList(_)).withDesc("a synthetic parameter list")
+          <|> termParams.map(TermParamList(_)).withDesc("a term parameter list")
+      val resType: Parser[TypeExpr] =
+        keyword(":").ts >> typeExpr.parser
+      val p =
+        (keyword("def").ts >>
+          nameP.withDesc("binding name").ts ^~
+          paramList.ts.many ^~
+          resType.ts.optional.withDesc("return type") ^~
+          keyword("=") ^~
+          expression.maybeBlockParser.withDesc("body")).map: (name, paramss, resType, _, body) =>
+            DefDef(name, paramss, resType, body)
+      p.setPos.withDesc("a `def` definition")
 
     def parser: Parser[Definition] = localParser
 
-    def localParser: Parser[LocalDef] = valDefP
+    def localParser: Parser[LocalDef] = valDefP <|> defDefP
 
   object expression:
     import ExprParser.*

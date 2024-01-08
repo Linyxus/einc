@@ -21,6 +21,10 @@ def testParsing[X](source: String, p: Parser[X]): Unit =
 @main def main: Unit =
   println("Welcome to einc")
 
-  testParsing("Int", typeExpr.parser << eof)
-  testParsing("List[List[Int, Bool], Set[String]]", typeExpr.parser << eof)
+  testParsing("def x = 1", definition.defDefP << eof)
+  testParsing("def x =\n  val y = 1\n  y", definition.defDefP << eof)
+  testParsing("def add(x: Int, y: Int): Int = add(x, y)", definition.defDefP << eof)
+  testParsing("def add(x: Int, y: Int) = add(x, y)", definition.defDefP << eof)
+  testParsing("def add(x: Int)(y: Int) = add(x, y)", definition.defDefP << eof)
+  testParsing("def add[A]{inst: Add[A]}(x: A, y: A) = add(x, y)", definition.defDefP << eof)
 
