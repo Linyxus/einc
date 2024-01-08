@@ -21,3 +21,6 @@ def testParsing[X](source: String, p: Parser[X]): Unit =
 @main def main: Unit =
   println("Welcome to einc")
 
+  testParsing("Int", typeExpr.parser << eof)
+  testParsing("List[List[Int, Bool], Set[String]]", typeExpr.parser << eof)
+

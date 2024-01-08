@@ -9,7 +9,10 @@ case class Span(start: Int, length: Int):
     val thisEnd = start + length
     val otherEnd = other.start + other.length
     val end1 = thisEnd max otherEnd
-    Span(start1, end1)
+    Span(start1, end1 - start1)
+
+  def --(other: SourcePos): Span =
+    Span(start, other.pos - start)
 
 object Span:
   def fromSourcePos(start: SourcePos, finish: SourcePos): Span =

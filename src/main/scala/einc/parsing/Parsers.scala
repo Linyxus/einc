@@ -63,7 +63,11 @@ object Parsers:
 
   extension [X](px: Parser[X])
     def inParens: Parser[X] =
+      // TODO Check whether `tsSame` does the expected thing here (probably no)
       px.tsSame.surroundedBy(string("(").ts.withDesc("`(`"), string(")").withDesc("`)`"))
+
+    def inBrackets: Parser[X] =
+      px.tsSame.surroundedBy(keyword("[").ts, keyword("]"))
 
     def trailingSpaces: Parser[X] = px << consumeTS(atLeastOne = false).dropDesc
 
@@ -136,8 +140,21 @@ object Parsers:
 
   object typeExpr:
     import TypeExpr.*
+
+    val typeRefP: Parser[TypeRef] =
+      nameP.withDesc("name of a type").map(TypeRef(_))
+
+    val appliedTypeP: Parser[TypeExpr] =
+      def params: Parser[List[TypeExpr]] =
+        parser.sepBy1(consumeTS(atLeastOne = false, sameLevel = true) >> keyword(",").ts).inBrackets
+      (typeRefP.setPos ^~ params.optional).map: (head, args) =>
+        args match
+          case Some(args) => AppliedType(head, args)
+          case None => head
+
     val parser: Parser[TypeExpr] =
-      nameP.withDesc("type name").map(TypeRef(_)).setPos
+      val p = appliedTypeP
+      p.setPos
 
   object typeKind:
     import tpd.TypeKind
