@@ -43,17 +43,25 @@ object Parsers:
     else
       ParseError("At least one whitespace is expected here", now.current, Nil, input.current)
 
-  def consumeTS(atLeastOne: Boolean, sameLevel: Boolean = false): Parser[Unit] =
+  enum IndentMode:
+    case StrictHigher
+    case Higher
+    case SameLevel
+  import IndentMode.*
+
+  def consumeTS(atLeastOne: Boolean, indentMode: IndentMode = StrictHigher): Parser[Unit] =
     (getCtx ^~ whitespaces(atLeastOne)).flatMap:
-      case (ctx, Some(level)) if ctx.indentLevel >= level && !sameLevel =>
+      case (ctx, Some(level)) if ctx.indentLevel >= level && indentMode == StrictHigher =>
+        fail("This is misindented, a strictly higher indent level is expected")
+      case (ctx, Some(level)) if ctx.indentLevel > level && indentMode == Higher =>
         fail("This is misindented, a higher indent level is expected")
-      case (ctx, Some(level)) if ctx.indentLevel != level && sameLevel =>
+      case (ctx, Some(level)) if ctx.indentLevel != level && indentMode == SameLevel =>
         fail("This is misindented, same indent level is expected")
       case _ => ().inject
 
   def ws: Parser[Unit] = whitespaces(atLeastOne = false) >> ().inject
 
-  def initWS: Parser[Unit] = consumeTS(atLeastOne = false, sameLevel = true) >> ().inject
+  def initWS: Parser[Unit] = consumeTS(atLeastOne = false, indentMode = SameLevel) >> ().inject
 
   def lineBreak: Parser[Unit] =
     (getCtx ^~ whitespaces(atLeastOne = false)).flatMap: (ctx, mlevel) =>
@@ -77,7 +85,7 @@ object Parsers:
 
     def ts1: Parser[X] = trailingSpaces1
 
-    def tsSame: Parser[X] = px << consumeTS(atLeastOne = false, sameLevel = true).dropDesc
+    def tsSame: Parser[X] = px << consumeTS(atLeastOne = false, indentMode = Higher).dropDesc
 
     def indented(newLevel: Int): Parser[X] = Parser: input =>
       px.runParser(input)(using ctx.withIndentLevel(newLevel))
@@ -146,7 +154,7 @@ object Parsers:
 
     val appliedTypeP: Parser[TypeExpr] =
       def params: Parser[List[TypeExpr]] =
-        parser.sepBy1(consumeTS(atLeastOne = false, sameLevel = true) >> keyword(",").ts).inBrackets
+        parser.sepBy1(consumeTS(atLeastOne = false, indentMode = IndentMode.Higher) >> keyword(",").ts).inBrackets
       (typeRefP.setPos ^~ params.optional).map: (head, args) =>
         args match
           case Some(args) => AppliedType(head, args)
