@@ -128,7 +128,7 @@ object Parsers:
     val ruleP: Parser[NotationRule] =
       (keywordP.withDesc("the `notation` keyword").trailingSpaces1
         ^~ patternP.withDesc("a notation pattern").trailingSpaces
-        ^~ keyword("`=>`").trailingSpaces
+        ^~ keyword("=>").trailingSpaces
         ^~ expression.parser.withDesc("rhs of the notation rule")).map: (prec, pattern, _, rhs) =>
           NotationRule(prec, pattern, rhs)
 
@@ -137,7 +137,32 @@ object Parsers:
   object typeExpr:
     import TypeExpr.*
     val parser: Parser[TypeExpr] =
-      nameP.withDesc("type name").map(Ident(_)).setPos
+      nameP.withDesc("type name").map(TypeRef(_)).setPos
+
+  object typeKind:
+    import tpd.TypeKind
+    import TypeKind.*
+
+    /** Parser for `Type` */
+    val starP: Parser[TypeKind] = keyword("Type") #> Star
+
+    /** Parser for `(...)` */
+    val baseP: Parser[TypeKind] =
+      starP.setPos <|> parser.inParens
+
+    /** Parser for type kinds */
+    val parser: Parser[TypeKind] =
+      val imp: Parser[TypeKind] = (consumeTS(atLeastOne = false) >> keyword("=>").ts >> baseP.withDesc("result kind"))
+      val imps: Parser[List[TypeKind]] = imp.many
+      @annotation.tailrec def recur(head: TypeKind, xs: List[TypeKind], cont: TypeKind => TypeKind): TypeKind = xs match
+        case Nil => cont(head)
+        case x :: xs =>
+          recur(x, xs, r =>
+            cont(Arrow(head, r).withPos(head.pos -- r.pos)))
+      val p =
+        (baseP ^~ imps).map: (head, imps) =>
+          recur(head, imps, r => r)
+      p.setPos.withDesc("type kind")
 
   object definition:
     import Definition.*
