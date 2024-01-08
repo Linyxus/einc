@@ -18,7 +18,11 @@ object Parsers:
       input.currentChar match
         case None => ParseError("unexpected end of input", input.current, Nil, input.current)
         case Some(ch) =>
-          val msg = if errMsg eq null then s"character `$ch` does not match the predicate" else errMsg
+          val msg =
+            if errMsg ne null then
+              errMsg.nn
+            else
+              s"character `$ch` does not match the predicate"
           if pred(ch) then ParseOk(ch, input.forward, Nil)
           else ParseError(msg, input.current, Nil, input.current)
 
@@ -43,13 +47,13 @@ object Parsers:
 
   /** A parser that consumes a specific string */
   def string(s: String): Parser[Unit] = Parser: input =>
-    if input.source.substring(input.current.pos).startsWith(s) then
+    if input.source.substring(input.current.pos).nn.startsWith(s) then
       ParseOk((), ParseInput(input.source, SourcePos(input.current.pos + s.length)), Nil)
     else
       ParseError(s"expected string `$s`", input.current, Nil, input.current)
 
   def lookaheadStr(text: String): Parser[Unit] = Parser: input =>
-    if input.source.substring(input.current.pos).startsWith(text) then
+    if input.source.substring(input.current.pos).nn.startsWith(text) then
       ParseOk((), input, Nil)
     else ParseError(s"expected string `$text`", input.current, Nil, input.current)
 
@@ -67,7 +71,7 @@ object Parsers:
     go()
     errMsg match
       case None =>
-        val str = input.source.substring(input.current.pos, current.current.pos)
+        val str = input.source.substring(input.current.pos, current.current.pos).nn
         ParseOk(str, current, Nil)
       case Some(msg) =>
         ParseError(msg, current.current, Nil, input.current)
