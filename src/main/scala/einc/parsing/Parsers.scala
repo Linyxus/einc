@@ -78,7 +78,6 @@ object Parsers:
     def indented(newLevel: Int): Parser[X] = Parser: input =>
       px.runParser(input)(using ctx.withIndentLevel(newLevel))
 
-
   val KEYWORD_LIST = Set(
     "val",
     "def",
@@ -141,13 +140,15 @@ object Parsers:
       nameP.withDesc("type name").map(Ident(_)).setPos
 
   object definition:
+    import Definition.*
+
     val valDefP: Parser[ValDef] =
       val p =
         (keyword("val").ts ^~ nameP.ts.withDesc("binding name") ^~ keyword("=") ^~ expression.maybeBlockParser).map: (_, name, _, body) =>
           ValDef(name, body)
       p.setPos.withDesc("value definition")
 
-    def parser: Parser[Definition] = valDefP
+    def parser: Parser[Definition] = localParser
 
     def localParser: Parser[LocalDef] = valDefP
 
