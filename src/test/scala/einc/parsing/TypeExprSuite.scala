@@ -25,3 +25,10 @@ class TypeExprSuite extends munit.FunSuite:
     assertSuccess("Map[String, Int]", typeExpr.parser << eof)
     assertSuccess("Map[String, Map[TypeRef, Symbol]]", typeExpr.parser << eof)
 
+  test("type expr parsing: function type"):
+    assertSuccess("Int => Int", typeExpr.parser << eof)
+    assertSuccess("(Int, Int) => Int", typeExpr.parser << eof)
+    assertSuccess("Int => Int => Int", typeExpr.parser << eof)
+    assertSuccess("(Int, Int => Int) => Int", typeExpr.parser << eof)
+    assertSuccess("(Int => Int) => Int => Int", typeExpr.parser << eof)
+

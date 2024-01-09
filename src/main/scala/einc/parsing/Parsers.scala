@@ -166,9 +166,31 @@ object Parsers:
           case Some(args) => AppliedType(head, args)
           case None => head
 
+    val funTypeP: Parser[TypeExpr] =
+      val baseP = appliedTypeP <|> parser.inParens
+      def paramListP =
+        parser.sepBy(wsh >> keyword(",") << wsh).inParens
+      def paramsP =
+        baseP.map(List(_)) <|> paramListP
+      (paramsP.ts ^~ keyword("=>").ts ^~ parser).map: (argTypes, _, resType) =>
+        FunctionType(argTypes, resType)
+
     val parser: Parser[TypeExpr] =
-      val p = appliedTypeP
+      val p = funTypeP <|> appliedTypeP
       p.setPos
+
+  def buildArrowLikeParser[X <: Positioned](base: Parser[X], cons: (X, X) => X, resultDesc: String): Parser[X] =
+    val imp: Parser[X] = (consumeTS(atLeastOne = false) >> keyword("=>").ts >> base.withDesc(resultDesc))
+    val imps: Parser[List[X]] = imp.many
+    @annotation.tailrec def recur(head: X, xs: List[X], cont: X => X): X = xs match
+      case Nil => cont(head)
+      case x :: xs =>
+        recur(x, xs, r =>
+          cont(cons(head, r).withPos(head.pos -- r.pos)))
+    val p =
+      (base ^~ imps).map: (head, imps) =>
+        recur(head, imps, r => r)
+    p.setPos
 
   object typeKind:
     import tpd.TypeKind
@@ -183,17 +205,7 @@ object Parsers:
 
     /** Parser for type kinds */
     val parser: Parser[TypeKind] =
-      val imp: Parser[TypeKind] = (consumeTS(atLeastOne = false) >> keyword("=>").ts >> baseP.withDesc("result kind"))
-      val imps: Parser[List[TypeKind]] = imp.many
-      @annotation.tailrec def recur(head: TypeKind, xs: List[TypeKind], cont: TypeKind => TypeKind): TypeKind = xs match
-        case Nil => cont(head)
-        case x :: xs =>
-          recur(x, xs, r =>
-            cont(Arrow(head, r).withPos(head.pos -- r.pos)))
-      val p =
-        (baseP ^~ imps).map: (head, imps) =>
-          recur(head, imps, r => r)
-      p.setPos.withDesc("type kind")
+      buildArrowLikeParser(baseP, (head, r) => Arrow(head, r).withPos(head.pos -- r.pos), "result kind").withDesc("type kind")
 
   object definition:
     import Definition.*
