@@ -23,8 +23,8 @@ def testParsing[X](source: String, p: Parser[X]): Unit =
 
   var source = """
 data List : Type => Type where
-  Nil : List[A]
-  Cons (x: A) (xs: List[A]) : List[A]
+  Nil[A] : List[A]
+  Cons[A](x: A, xs: List[A]): List[A]
 """
   testParsing(source, initWS >> definition.dataDefP << ws << eof)
 

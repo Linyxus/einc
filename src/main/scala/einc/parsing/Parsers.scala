@@ -225,7 +225,7 @@ object Parsers:
           ValDef(name, body)
       p.setPos.withDesc("a `val` definition")
 
-    val defDefP: Parser[DefDef] =
+    val defParamListP: Parser[DefParamList] =
       def typeParams: Parser[List[DefTypeParam]] =
         nameP.map(DefTypeParam(_)).setPos.sepBy(wsh >> keyword(",") << wsh).inBrackets
       def synParams: Parser[List[DefSynthesisParam]] =
@@ -242,12 +242,15 @@ object Parsers:
         typeParams.map(TypeParamList(_)).withDesc("a type parameter list")
           <|> synParams.map(SynthesisParamList(_)).withDesc("a synthetic parameter list")
           <|> termParams.map(TermParamList(_)).withDesc("a term parameter list")
+      paramList
+
+    val defDefP: Parser[DefDef] =
       val resType: Parser[TypeExpr] =
         keyword(":").ts >> typeExpr.parser
       val p =
         (keyword("def").ts >>
           nameP.withDesc("binding name").ts ^~
-          paramList.ts.many ^~
+          defParamListP.ts.many ^~
           resType.ts.optional.withDesc("return type") ^~
           keyword("=") ^~
           expression.maybeBlockParser.withDesc("body")).map: (name, paramss, resType, _, body) =>
@@ -255,8 +258,7 @@ object Parsers:
       p.setPos.withDesc("a `def` definition")
 
     val constructorP: Parser[ConstructorDef] =
-      def componentP: Parser[(String, TypeExpr)] =
-        (nameP.ts ^~ keyword(":").ts ^~ typeExpr.parser).map((x, _, t) => (x, t)).inParens
+      def componentP: Parser[DefParamList] = defParamListP
       val p = (nameP.ts
         ^~ componentP.ts.many
         ^~ keyword(":").ts
@@ -274,7 +276,7 @@ object Parsers:
 
     def parser: Parser[Definition] = localParser
 
-    def localParser: Parser[LocalDef] = valDefP <|> defDefP
+    def localParser: Parser[LocalDef] = valDefP <|> defDefP <|> dataDefP
 
   object expression:
     import ExprParser.*
