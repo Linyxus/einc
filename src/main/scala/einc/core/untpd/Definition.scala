@@ -23,7 +23,7 @@ object Definition:
 
   case class DefDef(name: String, paramss: List[DefParamList], resType: Option[TypeExpr], body: Expr) extends LocalDef
 
-  case class ConstructorDef(name: String, signature: TypeExpr)
+  case class ConstructorDef(name: String, components: List[(String, TypeExpr)], tpe: TypeExpr) extends Positioned
 
-  case class DataDef(name: String, kind: tpd.TypeKind, constructors: List[ConstructorDef])
+  case class DataDef(name: String, kind: tpd.TypeKind, constructors: List[ConstructorDef]) extends LocalDef
 

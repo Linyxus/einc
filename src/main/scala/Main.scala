@@ -21,6 +21,10 @@ def testParsing[X](source: String, p: Parser[X]): Unit =
 @main def main: Unit =
   println("Welcome to einc")
 
-  testParsing("Int => Int => Int", typeExpr.parser << eof)
-  testParsing("(Int, Int => Int) => Int", typeExpr.parser << eof)
+  var source = """
+data List : Type => Type where
+  Nil : List[A]
+  Cons (x: A) (xs: List[A]) : List[A]
+"""
+  testParsing(source, initWS >> definition.dataDefP << ws << eof)
 

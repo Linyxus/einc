@@ -72,6 +72,15 @@ object Parsers:
         case Some(level) if level == ctx.indentLevel => ().inject
         case _ => fail(s"Not a line break at level ${ctx.indentLevel}")
 
+  def maybeStartIndentedBlock[X](px: Parser[X], pfallback: Parser[X]): Parser[X] =
+    whitespaces(atLeastOne = false).flatMap:
+      case None => pfallback
+      case Some(level) => getCtx.flatMap: ctx =>
+        if level <= ctx.indentLevel then
+          fail("Right indentation is expected")
+        else
+          px.indented(level)
+
   extension [X](px: Parser[X])
     def inParens: Parser[X] =
       px.tsSame.surroundedBy(string("(").ts.withDesc("`(`"), string(")").withDesc("`)`"))
@@ -244,6 +253,24 @@ object Parsers:
           expression.maybeBlockParser.withDesc("body")).map: (name, paramss, resType, _, body) =>
             DefDef(name, paramss, resType, body)
       p.setPos.withDesc("a `def` definition")
+
+    val constructorP: Parser[ConstructorDef] =
+      def componentP: Parser[(String, TypeExpr)] =
+        (nameP.ts ^~ keyword(":").ts ^~ typeExpr.parser).map((x, _, t) => (x, t)).inParens
+      val p = (nameP.ts
+        ^~ componentP.ts.many
+        ^~ keyword(":").ts
+        ^~ typeExpr.parser).map: (name, cs, _, res) =>
+          ConstructorDef(name, cs, res)
+      p.setPos
+
+    val dataDefP: Parser[DataDef] =
+      def conssP: Parser[List[ConstructorDef]] = constructorP.sepBy(lineBreak)
+      val p =
+        (keyword("data").ts ^~ nameP.ts ^~ keyword(":").ts ^~ typeKind.parser.ts ^~ keyword("where") ^~
+          maybeStartIndentedBlock(conssP, fail("A indented block of constructors is expected"))).map: (_, name, _, sig, _, conss) =>
+            DataDef(name, sig, conss)
+      p.setPos
 
     def parser: Parser[Definition] = localParser
 
